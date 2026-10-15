@@ -1,0 +1,22 @@
+{
+  "name": "stranger-video-call-server",
+  "version": "1.0.0",
+  "description": "Anonymous WebRTC signaling server",
+  "main": "server.ts",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.0.0"
+  },
+  "allowScripts": {
+    "tsx@4.23.15": true
+  }
+}
