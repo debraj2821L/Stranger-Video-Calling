@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'screens/create_room_screen.dart';
 import 'screens/join_room_screen.dart';
+import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,6 +82,37 @@ class StrangerVideoCallApp extends StatelessWidget {
   }
 }
 
+Future<void> downloadAndroidApk(BuildContext context) async {
+  final uri = Uri.parse(
+    'https://github.com/debraj2821L/'
+    'Stranger-Video-Calling/releases/latest/download/'
+    'stranger-video-call.apk',
+  );
+
+  try {
+    final launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open the APK download link. Please try again.',
+          ),
+        ),
+      );
+    }
+  } catch (error) {
+    debugPrint('APK download link error: $error');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open the download link. Please try again.'),
+        ),
+      );
+    }
+  }
+}
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -153,6 +186,10 @@ class HomeScreen extends StatelessWidget {
                         const SizedBox(height: 14),
 
                         _buildJoinButton(context),
+                        if (kIsWeb) ...[
+                          const SizedBox(height: 14),
+                          _buildInstallButton(context),
+                        ],
                         const SizedBox(height: 26),
 
                         Container(
@@ -298,6 +335,26 @@ class HomeScreen extends StatelessWidget {
         },
         icon: const Icon(Icons.login_rounded, size: 21),
         label: const Text('Join with Room ID'),
+      ),
+    );
+  }
+
+  Widget _buildInstallButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: () => downloadAndroidApk(context),
+        icon: const Icon(Icons.android_rounded, size: 25),
+        label: const Text('Install on Phone'),
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFFB8F36B),
+          foregroundColor: const Color(0xFF10170A),
+          minimumSize: const Size(0, 58),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(17),
+          ),
+        ),
       ),
     );
   }
