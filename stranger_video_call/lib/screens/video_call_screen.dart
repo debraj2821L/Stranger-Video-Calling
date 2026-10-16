@@ -23,6 +23,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   bool _microphoneEnabled = true;
   bool _cameraEnabled = true;
+  bool _isFrontCamera = true;
+  bool _switchingCamera = false;
   bool _connected = false;
   bool _peerConnected = false;
   bool _starting = true;
@@ -323,6 +325,37 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       }
     } catch (error) {
       debugPrint('[VideoCall] Camera error: $error');
+    }
+  }
+
+  Future<void> _flipCamera() async {
+    if (_switchingCamera || !_cameraEnabled) return;
+
+    setState(() => _switchingCamera = true);
+    try {
+      await _webRTC.switchCamera();
+      if (!mounted) return;
+      setState(() {
+        _isFrontCamera = !_isFrontCamera;
+        _remoteVideoVersion++;
+      });
+      debugPrint(
+        '[VideoCall] Switched to ${_isFrontCamera ? 'front' : 'rear'} camera',
+      );
+    } catch (error) {
+      debugPrint('[VideoCall] Camera flip unavailable: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Camera switching is not supported by this device/browser.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _switchingCamera = false);
     }
   }
 
@@ -849,6 +882,18 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 label: _cameraEnabled ? 'Camera' : 'Camera off',
                 active: _cameraEnabled,
                 onTap: _toggleCamera,
+              ),
+            ),
+            Expanded(
+              child: _buildControl(
+                icon: _switchingCamera
+                    ? Icons.hourglass_top_rounded
+                    : Icons.flip_camera_android_rounded,
+                label: _switchingCamera
+                    ? 'Switching'
+                    : (_isFrontCamera ? 'Rear camera' : 'Selfie camera'),
+                active: true,
+                onTap: _flipCamera,
               ),
             ),
             Expanded(

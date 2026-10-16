@@ -27,6 +27,22 @@ class WebRTCService {
     debugPrint('[WebRTC] Renderers initialized');
   }
 
+  Future<void> switchCamera() async {
+    final stream = _localStream;
+
+    if (stream == null) {
+      throw StateError('Local camera stream is not initialized.');
+    }
+
+    final videoTracks = stream.getVideoTracks();
+
+    if (videoTracks.isEmpty) {
+      throw StateError('No video camera is available.');
+    }
+
+    await Helper.switchCamera(videoTracks.first);
+  }
+
   Future<void> logVideoStats() async {
     final peer = _peerConnection;
 
