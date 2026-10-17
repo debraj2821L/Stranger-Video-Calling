@@ -906,7 +906,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             ),
             Expanded(
               child: _buildControl(
-                icon: Icons.call_end_rounded,
+                icon: Icons.phone_disabled_rounded,
                 label: 'End call',
                 active: false,
                 destructive: true,
@@ -926,17 +926,21 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     required VoidCallback onTap,
     bool destructive = false,
   }) {
-    final color = destructive
-        ? const Color(0xFFFF496C)
+    final backgroundColor = destructive
+        ? const Color(0xFF351820)
         : active
-        ? Colors.white
-        : Colors.orangeAccent;
+        ? const Color(0xFF42E8F5).withValues(alpha: 0.18)
+        : Colors.white.withValues(alpha: 0.08);
 
-    final background = destructive
-        ? const Color(0xFFFF496C)
+    final foregroundColor = destructive
+        ? const Color(0xFFFF667A)
         : active
-        ? Colors.white.withValues(alpha: 0.07)
-        : Colors.orangeAccent.withValues(alpha: 0.14);
+        ? const Color(0xFF42E8F5)
+        : Colors.white70;
+
+    final borderColor = destructive
+        ? const Color(0xFFFF667A).withValues(alpha: 0.45)
+        : Colors.white.withValues(alpha: 0.10);
 
     return Semantics(
       button: true,
@@ -956,23 +960,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                   width: 54,
                   height: 54,
                   decoration: BoxDecoration(
-                    color: background,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: destructive
-                          ? Colors.transparent
-                          : color.withValues(alpha: 0.12),
-                    ),
-                    boxShadow: destructive
-                        ? [
-                            BoxShadow(
-                              color: color.withValues(alpha: 0.20),
-                              blurRadius: 18,
-                            ),
-                          ]
-                        : null,
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: borderColor),
                   ),
-                  child: Icon(icon, color: color, size: 23),
+                  child: Icon(icon, color: foregroundColor, size: 23),
                 ),
                 const SizedBox(height: 9),
                 Text(

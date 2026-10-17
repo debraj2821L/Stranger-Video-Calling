@@ -249,29 +249,11 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildLogo() {
-    return Container(
-      width: 112,
-      height: 112,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(34),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [cyan, purple],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: cyan.withValues(alpha: 0.16),
-            blurRadius: 35,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: const Icon(
-        Icons.video_call_rounded,
-        color: Color(0xFF080B14),
-        size: 67,
-      ),
+    return Image.asset(
+      'assets/branding/logo.png',
+      width: 180,
+      height: 100,
+      fit: BoxFit.contain,
     );
   }
 
