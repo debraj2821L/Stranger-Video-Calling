@@ -50,6 +50,12 @@ dev_dependencies:
   
   flutter_lints: ^6.0.0
 
+dependency_overrides:
+  dart_webrtc:
+    path: packages/dart_webrtc
+  socket_io_common:
+    path: packages/socket_io_common
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

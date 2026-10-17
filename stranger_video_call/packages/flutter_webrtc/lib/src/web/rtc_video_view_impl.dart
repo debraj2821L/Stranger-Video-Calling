@@ -108,9 +108,10 @@ class RTCVideoViewState extends State<RTCVideoView> {
             capturedFrame = img;
           });
         }
-      } on web.DOMException catch (err) {
+      } catch (err) {
         lastFrameTime = null;
-        if (err.name == 'InvalidStateError') {
+        final String? errorName = (err as dynamic)?.name as String?;
+        if (errorName == 'InvalidStateError') {
           // We don't have enough data yet, continue on
         } else {
           rethrow;

@@ -106,12 +106,11 @@ packages:
     source: hosted
     version: "1.0.9"
   dart_webrtc:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: dart_webrtc
-      sha256: "078e3c431500147e5cc52b3c6ea41ed538f30c7720cc2467d2186c9251e62716"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/dart_webrtc"
+      relative: true
+    source: path
     version: "1.8.2"
   fake_async:
     dependency: transitive
@@ -413,12 +412,11 @@ packages:
     source: hosted
     version: "3.1.6"
   socket_io_common:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: socket_io_common
-      sha256: "162fbaecbf4bf9a9372a62a341b3550b51dcef2f02f3e5830a297fd48203d45b"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/socket_io_common"
+      relative: true
+    source: path
     version: "3.1.1"
   source_span:
     dependency: transitive
