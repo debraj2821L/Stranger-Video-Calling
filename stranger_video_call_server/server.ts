@@ -190,6 +190,49 @@ io.on("connection", (socket) => {
   );
 
   // ==========================================================
+  // RECORDING CONSENT
+  // ==========================================================
+
+  socket.on(
+    "recording-consent-request",
+    (data) => {
+      const roomId = socket.data.roomId;
+
+      if (!roomId || !data || typeof data !== "object") {
+        return;
+      }
+
+      socket.to(roomId).emit("recording-consent-request", data);
+    },
+  );
+
+  socket.on(
+    "recording-consent-response",
+    (data) => {
+      const roomId = socket.data.roomId;
+
+      if (!roomId || !data || typeof data !== "object") {
+        return;
+      }
+
+      socket.to(roomId).emit("recording-consent-response", data);
+    },
+  );
+
+  socket.on(
+    "recording-consent-cancelled",
+    (data) => {
+      const roomId = socket.data.roomId;
+
+      if (!roomId || !data || typeof data !== "object") {
+        return;
+      }
+
+      socket.to(roomId).emit("recording-consent-cancelled", data);
+    },
+  );
+
+  // ==========================================================
   // LEAVE ROOM
   // ==========================================================
 

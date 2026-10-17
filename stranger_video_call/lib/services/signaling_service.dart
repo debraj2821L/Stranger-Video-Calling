@@ -11,6 +11,9 @@ class SignalingService {
   Function(dynamic data)? onOffer;
   Function(dynamic data)? onAnswer;
   Function(dynamic data)? onIceCandidate;
+  Function(Map<String, dynamic> data)? onRecordingConsentRequest;
+  Function(Map<String, dynamic> data)? onRecordingConsentResponse;
+  Function(Map<String, dynamic> data)? onRecordingConsentCancelled;
 
   bool get isConnected => _socket?.connected ?? false;
 
@@ -72,6 +75,27 @@ class SignalingService {
     _socket!.on('ice-candidate', (data) {
       _log('Received ICE candidate');
       onIceCandidate?.call(data);
+    });
+
+    _socket!.on('recording-consent-request', (data) {
+      if (data is Map) {
+        _log('Recording consent requested');
+        onRecordingConsentRequest?.call(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('recording-consent-response', (data) {
+      if (data is Map) {
+        _log('Recording consent response received');
+        onRecordingConsentResponse?.call(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('recording-consent-cancelled', (data) {
+      if (data is Map) {
+        _log('Recording consent cancelled');
+        onRecordingConsentCancelled?.call(Map<String, dynamic>.from(data));
+      }
     });
 
     _socket!.connect();
@@ -142,6 +166,33 @@ class SignalingService {
 
     _socket!.emit('ice-candidate', data);
     _log('ICE candidate sent');
+  }
+
+  void sendRecordingConsentRequest(Map<String, dynamic> data) {
+    if (_socket?.connected != true) {
+      return;
+    }
+
+    _socket!.emit('recording-consent-request', data);
+    _log('Recording consent request sent');
+  }
+
+  void sendRecordingConsentResponse(Map<String, dynamic> data) {
+    if (_socket?.connected != true) {
+      return;
+    }
+
+    _socket!.emit('recording-consent-response', data);
+    _log('Recording consent response sent');
+  }
+
+  void sendRecordingConsentCancelled(Map<String, dynamic> data) {
+    if (_socket?.connected != true) {
+      return;
+    }
+
+    _socket!.emit('recording-consent-cancelled', data);
+    _log('Recording consent cancelled event sent');
   }
 
   void leaveRoom() {

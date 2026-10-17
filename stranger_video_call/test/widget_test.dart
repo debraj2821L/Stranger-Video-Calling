@@ -8,8 +8,8 @@ void main() {
 
     expect(find.text('Stranger Video Call'), findsOneWidget);
 
-    expect(find.text('Create Room'), findsOneWidget);
+    expect(find.text('Create a room'), findsOneWidget);
 
-    expect(find.text('Join Room'), findsOneWidget);
+    expect(find.text('Join with Room ID'), findsOneWidget);
   });
 }

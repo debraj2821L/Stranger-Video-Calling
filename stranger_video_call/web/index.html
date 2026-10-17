@@ -31,6 +31,17 @@
 
   <title>Stranger Video Call</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  img {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
+</style>
 </head>
 <body>
   <!--
@@ -42,5 +53,15 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <script>
+  document.addEventListener('contextmenu', function (event) {
+    event.preventDefault();
+  });
+
+  document.addEventListener('dragstart', function (event) {
+    event.preventDefault();
+  });
+</script>
 </body>
 </html>

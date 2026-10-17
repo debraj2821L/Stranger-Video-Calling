@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'screens/create_room_screen.dart';
 import 'screens/join_room_screen.dart';
-import 'package:flutter/foundation.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'screens/recordings_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -186,6 +187,8 @@ class HomeScreen extends StatelessWidget {
                         const SizedBox(height: 14),
 
                         _buildJoinButton(context),
+                        const SizedBox(height: 14),
+                        _buildRecordingsButton(context),
                         if (kIsWeb) ...[
                           const SizedBox(height: 14),
                           _buildInstallButton(context),
@@ -317,6 +320,19 @@ class HomeScreen extends StatelessWidget {
         },
         icon: const Icon(Icons.login_rounded, size: 21),
         label: const Text('Join with Room ID'),
+      ),
+    );
+  }
+
+  Widget _buildRecordingsButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          _openScreen(context, const RecordingsScreen());
+        },
+        icon: const Icon(Icons.folder_open_rounded, size: 21),
+        label: const Text('Recordings library'),
       ),
     );
   }

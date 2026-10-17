@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../config/server_config.dart';
+import '../services/recording_service.dart';
 import '../services/signaling_service.dart';
 import '../services/webrtc_service.dart';
 
@@ -20,17 +21,28 @@ class VideoCallScreen extends StatefulWidget {
 class _VideoCallScreenState extends State<VideoCallScreen> {
   final SignalingService _signaling = SignalingService();
   final WebRTCService _webRTC = WebRTCService();
+  final RecordingService _recordingService = RecordingService();
 
   bool _microphoneEnabled = true;
   bool _cameraEnabled = true;
   bool _isFrontCamera = true;
   bool _switchingCamera = false;
-  bool _connected = false;
   bool _peerConnected = false;
   bool _starting = true;
   bool _cleanedUp = false;
+  bool _recordingInProgress = false;
+  bool _recordingConsentPending = false;
+  bool _localRecordingConsent = false;
+  bool _remoteRecordingConsent = false;
 
+  String? _activeRecordingRequestId;
+  Duration _recordingElapsed = Duration.zero;
+  Timer? _recordingTimer;
+  Timer? _recordingConsentTimer;
+
+  RecordingServiceState _recordingState = RecordingServiceState.ready;
   String _statusMessage = 'Preparing your camera...';
+  String _recordingMessage = 'Recording unavailable';
 
   final List<RTCIceCandidate> _pendingIceCandidates = [];
 
@@ -41,10 +53,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   static const Color _surface = Color(0xFF111827);
   static const Color _cyan = Color(0xFF42E8F5);
   static const Color _purple = Color(0xFF9B7BFF);
+  static const Color _success = Color(0xFF32C48D);
 
   @override
   void initState() {
     super.initState();
+    _prepareRecordingAvailability();
     _startCall();
   }
 
@@ -86,7 +100,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       if (!mounted) return;
 
       setState(() {
-        _connected = true;
         _starting = false;
         _statusMessage = 'Waiting for another participant';
       });
@@ -126,6 +139,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         '$_remoteVideoVersion',
       );
     };
+
+    _signaling.onRecordingConsentRequest = _handleRecordingConsentRequest;
+    _signaling.onRecordingConsentResponse = _handleRecordingConsentResponse;
+    _signaling.onRecordingConsentCancelled = _handleRecordingConsentCancelled;
+
     _signaling.onPeerJoined = () async {
       debugPrint('[VideoCall] Peer joined');
 
@@ -359,6 +377,67 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
   }
 
+  void _clearRecordingConsentTimer() {
+    _recordingConsentTimer?.cancel();
+    _recordingConsentTimer = null;
+  }
+
+  void _scheduleRecordingConsentTimeout() {
+    _clearRecordingConsentTimer();
+    final activeRequestId = _activeRecordingRequestId;
+    if (activeRequestId == null || activeRequestId.isEmpty) return;
+
+    _recordingConsentTimer = Timer(const Duration(seconds: 30), () {
+      if (!mounted) return;
+      if (_recordingState != RecordingServiceState.awaitingConsent) return;
+      if (_activeRecordingRequestId != activeRequestId) return;
+
+      _showRecordingMessage(
+        'No response arrived from the other participant. Recording cancelled.',
+        backgroundColor: const Color(0xFFB93850),
+      );
+
+      _signaling.sendRecordingConsentCancelled({
+        'requestId': activeRequestId,
+        'roomId': widget.roomId,
+        'cancelled': true,
+        'reason': 'timeout',
+      });
+
+      setState(() {
+        _recordingConsentPending = false;
+        _localRecordingConsent = false;
+        _remoteRecordingConsent = false;
+        _activeRecordingRequestId = null;
+        _recordingState = RecordingServiceState.ready;
+        _recordingMessage = 'Recording cancelled';
+      });
+    });
+  }
+
+  Future<void> _prepareRecordingAvailability() async {
+    if (!_recordingService.isAndroid) {
+      if (!mounted) return;
+      setState(() {
+        _recordingState = RecordingServiceState.unsupported;
+        _recordingMessage = 'Recording is Android-only';
+      });
+      return;
+    }
+
+    final supported = await _recordingService.checkSupport();
+    if (!mounted) return;
+
+    setState(() {
+      _recordingState = supported
+          ? RecordingServiceState.ready
+          : RecordingServiceState.unsupported;
+      _recordingMessage = supported
+          ? 'Ready to record'
+          : 'Recording setup incomplete';
+    });
+  }
+
   Future<void> _copyRoomId() async {
     await Clipboard.setData(ClipboardData(text: widget.roomId));
 
@@ -369,6 +448,333 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         content: Text('Room ID copied'),
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _requestRecordingConsent() async {
+    if (!_peerConnected) {
+      _showRecordingMessage(
+        'Recording is only available during an active call.',
+      );
+      return;
+    }
+
+    if (!_recordingService.isAndroid) {
+      _showRecordingMessage('Recording is only available on Android.');
+      return;
+    }
+
+    if (_recordingState == RecordingServiceState.recording ||
+        _recordingState == RecordingServiceState.awaitingConsent) {
+      _showRecordingMessage(
+        'A recording is already in progress or pending consent.',
+      );
+      return;
+    }
+
+    final supported = await _recordingService.checkSupport();
+    if (!supported) {
+      _showRecordingMessage('Recording setup incomplete on this device.');
+      setState(() {
+        _recordingState = RecordingServiceState.unsupported;
+        _recordingMessage = 'Recording setup incomplete';
+      });
+      return;
+    }
+
+    final requestId = DateTime.now().millisecondsSinceEpoch.toString();
+    if (!mounted) return;
+    // ignore: use_build_context_synchronously
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Record this call?'),
+        content: const Text(
+          'Both participants must explicitly consent before recording begins. This app records the local microphone and the active call video stream; mixed two-person audio is not verified yet. The file is encrypted locally on this device only.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('I consent'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      _showRecordingMessage('Recording cancelled.');
+      return;
+    }
+
+    setState(() {
+      _recordingState = RecordingServiceState.awaitingConsent;
+      _recordingMessage = 'Waiting for the other participant to consent...';
+      _recordingConsentPending = true;
+      _localRecordingConsent = true;
+      _remoteRecordingConsent = false;
+      _activeRecordingRequestId = requestId;
+    });
+    _scheduleRecordingConsentTimeout();
+
+    _signaling.sendRecordingConsentRequest({
+      'requestId': requestId,
+      'roomId': widget.roomId,
+      'initiator': 'local',
+      'accepted': true,
+    });
+  }
+
+  Future<void> _handleRecordingConsentRequest(Map<String, dynamic> data) async {
+    final requestId = data['requestId']?.toString();
+    if (requestId == null || requestId.isEmpty) {
+      return;
+    }
+
+    if (_recordingState == RecordingServiceState.recording ||
+        _recordingConsentPending) {
+      _signaling.sendRecordingConsentResponse({
+        'requestId': requestId,
+        'accepted': false,
+        'reason': 'busy',
+        'roomId': widget.roomId,
+      });
+      return;
+    }
+
+    if (_activeRecordingRequestId != null &&
+        _activeRecordingRequestId != requestId) {
+      _signaling.sendRecordingConsentResponse({
+        'requestId': requestId,
+        'accepted': false,
+        'reason': 'busy',
+        'roomId': widget.roomId,
+      });
+      return;
+    }
+
+    _recordingConsentPending = true;
+    _activeRecordingRequestId = requestId;
+    _localRecordingConsent = false;
+    _remoteRecordingConsent = false;
+    setState(() {
+      _recordingState = RecordingServiceState.awaitingConsent;
+      _recordingMessage = 'Other participant wants to record this call';
+    });
+    _scheduleRecordingConsentTimeout();
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Recording consent request'),
+        content: const Text(
+          'The other participant wants to record both video and audio from this call. This recording will be encrypted locally on the initiating device. Do you consent?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Decline'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+
+    if (accepted != true) {
+      _clearRecordingConsentTimer();
+      _recordingConsentPending = false;
+      _activeRecordingRequestId = null;
+      setState(() {
+        _recordingState = RecordingServiceState.ready;
+        _recordingMessage = 'Recording declined';
+      });
+      _signaling.sendRecordingConsentResponse({
+        'requestId': requestId,
+        'accepted': false,
+        'reason': 'declined',
+        'roomId': widget.roomId,
+      });
+      return;
+    }
+
+    _clearRecordingConsentTimer();
+    _remoteRecordingConsent = true;
+    _signaling.sendRecordingConsentResponse({
+      'requestId': requestId,
+      'accepted': true,
+      'roomId': widget.roomId,
+    });
+
+    if (_localRecordingConsent) {
+      _beginRecording();
+    } else {
+      setState(() {
+        _recordingState = RecordingServiceState.awaitingConsent;
+        _recordingMessage = 'Waiting for your local consent to finish';
+      });
+    }
+  }
+
+  Future<void> _handleRecordingConsentResponse(
+    Map<String, dynamic> data,
+  ) async {
+    final requestId = data['requestId']?.toString();
+    if (requestId == null ||
+        requestId.isEmpty ||
+        _activeRecordingRequestId != requestId) {
+      return;
+    }
+
+    final accepted = data['accepted'] == true;
+    if (!accepted) {
+      _clearRecordingConsentTimer();
+      _recordingConsentPending = false;
+      _activeRecordingRequestId = null;
+      setState(() {
+        _recordingState = RecordingServiceState.ready;
+        _recordingMessage = 'Remote participant declined recording';
+      });
+      _showRecordingMessage('The other participant declined recording.');
+      return;
+    }
+
+    _clearRecordingConsentTimer();
+    _remoteRecordingConsent = true;
+    if (_localRecordingConsent) {
+      _beginRecording();
+    }
+  }
+
+  Future<void> _handleRecordingConsentCancelled(
+    Map<String, dynamic> data,
+  ) async {
+    final requestId = data['requestId']?.toString();
+    if (requestId == null ||
+        requestId.isEmpty ||
+        _activeRecordingRequestId != requestId) {
+      return;
+    }
+
+    _clearRecordingConsentTimer();
+    _recordingConsentPending = false;
+    _activeRecordingRequestId = null;
+    _localRecordingConsent = false;
+    _remoteRecordingConsent = false;
+    setState(() {
+      _recordingState = RecordingServiceState.ready;
+      _recordingMessage = 'Recording cancelled';
+    });
+    _showRecordingMessage('Recording cancelled by the other participant.');
+  }
+
+  Future<void> _beginRecording() async {
+    if (_recordingState == RecordingServiceState.recording) {
+      return;
+    }
+
+    if (!_localRecordingConsent || !_remoteRecordingConsent) {
+      _showRecordingMessage(
+        'Both participants must explicitly consent before recording.',
+      );
+      return;
+    }
+
+    try {
+      await _recordingService.startRecording(
+        localStream: _webRTC.localStream,
+        remoteStream: _webRTC.remoteStream,
+      );
+      _recordingInProgress = true;
+      _recordingConsentPending = false;
+      _recordingState = RecordingServiceState.recording;
+      _recordingMessage = 'Recording active';
+      _recordingElapsed = Duration.zero;
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || !_recordingInProgress) return;
+        setState(() => _recordingElapsed += const Duration(seconds: 1));
+      });
+      _showRecordingMessage(
+        'Recording started. Local microphone capture and active call video are being recorded.',
+        backgroundColor: _success,
+      );
+    } on PlatformException catch (error) {
+      _recordingState = RecordingServiceState.failed;
+      _recordingMessage = 'Recording setup incomplete';
+      _recordingInProgress = false;
+      _recordingConsentPending = false;
+      _showRecordingMessage(
+        'Recording setup incomplete: ${error.message ?? 'Native pipeline unavailable'}',
+      );
+    } catch (error) {
+      _recordingState = RecordingServiceState.failed;
+      _recordingMessage = 'Recording setup incomplete';
+      _recordingInProgress = false;
+      _recordingConsentPending = false;
+      _showRecordingMessage('Recording setup incomplete.');
+    }
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_recordingState == RecordingServiceState.recording) {
+      await _stopRecording('User stopped recording.');
+      return;
+    }
+
+    await _requestRecordingConsent();
+  }
+
+  Future<void> _stopRecording([String reason = 'Recording stopped']) async {
+    if (!_recordingInProgress &&
+        _recordingState != RecordingServiceState.awaitingConsent) {
+      return;
+    }
+
+    try {
+      final result = await _recordingService.stopRecording();
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      _recordingInProgress = false;
+      _recordingConsentPending = false;
+      _localRecordingConsent = false;
+      _remoteRecordingConsent = false;
+      _activeRecordingRequestId = null;
+      _recordingState = RecordingServiceState.ready;
+      _recordingElapsed = Duration.zero;
+      _recordingMessage = 'Ready to record';
+      _showRecordingMessage(
+        result != null ? 'Recording saved: $result' : reason,
+        backgroundColor: _success,
+      );
+    } catch (error) {
+      _recordingState = RecordingServiceState.failed;
+      _recordingMessage = 'Recording setup incomplete';
+      _showRecordingMessage('Recording could not stop cleanly.');
+    }
+  }
+
+  void _showRecordingMessage(
+    String message, {
+    Color backgroundColor = const Color(0xFFB93850),
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: backgroundColor,
+        duration: duration,
       ),
     );
   }
@@ -384,6 +790,33 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   Future<void> _cleanup() async {
     if (_cleanedUp) return;
     _cleanedUp = true;
+
+    if (_recordingState == RecordingServiceState.awaitingConsent ||
+        _recordingState == RecordingServiceState.recording) {
+      final requestId =
+          _activeRecordingRequestId ??
+          DateTime.now().millisecondsSinceEpoch.toString();
+      _signaling.sendRecordingConsentCancelled({
+        'requestId': requestId,
+        'roomId': widget.roomId,
+        'cancelled': true,
+      });
+      if (_recordingInProgress) {
+        try {
+          await _recordingService.stopRecording();
+        } catch (_) {}
+      }
+    }
+
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    _recordingInProgress = false;
+    _recordingConsentPending = false;
+    _localRecordingConsent = false;
+    _remoteRecordingConsent = false;
+    _activeRecordingRequestId = null;
+    _recordingState = RecordingServiceState.ready;
+    _recordingElapsed = Duration.zero;
 
     _signaling.leaveRoom();
     _signaling.disconnect();
@@ -896,6 +1329,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 onTap: _flipCamera,
               ),
             ),
+            Expanded(child: _buildRecordControl()),
             Expanded(
               child: _buildControl(
                 icon: Icons.copy_rounded,
@@ -917,6 +1351,108 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildRecordControl() {
+    final isDisabled =
+        !_recordingService.isAndroid ||
+        !_peerConnected ||
+        _starting ||
+        _cleanedUp;
+    final isRecording = _recordingState == RecordingServiceState.recording;
+    final label = isRecording ? 'Stop' : 'Record';
+    final icon = isRecording
+        ? Icons.stop_circle_rounded
+        : Icons.fiber_manual_record;
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: _recordingMessage,
+        child: InkWell(
+          onTap: isDisabled ? null : _toggleRecording,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: isRecording
+                        ? const Color(0xFF552529)
+                        : const Color(0xFF42E8F5).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isRecording
+                          ? const Color(0xFFFF667A).withValues(alpha: 0.45)
+                          : Colors.white.withValues(alpha: 0.10),
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isRecording
+                        ? const Color(0xFFFF667A)
+                        : const Color(0xFF42E8F5),
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isDisabled ? Colors.white54 : Colors.white70,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (isRecording ||
+                    _recordingState == RecordingServiceState.awaitingConsent)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          isRecording
+                              ? _formatElapsedTime(_recordingElapsed)
+                              : 'Waiting',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatElapsedTime(Duration elapsed) {
+    final seconds = elapsed.inSeconds;
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildControl({
