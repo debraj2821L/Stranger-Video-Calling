@@ -31,6 +31,35 @@
 
   <title>Stranger Video Call</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+  (() => {
+    // Discourage common browser capture shortcuts.
+    document.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+
+      if (
+        event.key === 'PrintScreen' ||
+        (event.ctrlKey && event.shiftKey &&
+          ['s', 'i', 'j', 'c'].includes(key)) ||
+        (event.ctrlKey && key === 'p')
+      ) {
+        event.preventDefault();
+      }
+    }, true);
+
+    // Clear the clipboard where browsers permit it.
+    document.addEventListener('keyup', async (event) => {
+      if (event.key === 'PrintScreen' && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText('');
+        } catch (_) {
+          // Clipboard access may be denied by the browser.
+        }
+      }
+    }, true);
+  })();
+</script>
 </head>
 <body>
   <!--
